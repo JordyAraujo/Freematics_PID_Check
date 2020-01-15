@@ -38,13 +38,6 @@
 #define STATE_WORKING 0x40
 #define STATE_STANDBY 0x100
 
-#define PID_EMISSION_MAF 0xC5     // Added so the calculated values would
-#define PID_EMISSION_MAP 0xC6     // have their own reference to check
-#define PID_FUEL_CONSUMPTION 0xC7 //
-
-bool shouldOBDLog = SHOULD_OBD_LOG; // Defines whether OBD and
-bool shouldGPSLog = SHOULD_GPS_LOG; // GPS data should be saved on the CSV
-
 byte OBDList[] = {
     PID_ENGINE_LOAD,
     PID_COOLANT_TEMP,
@@ -96,7 +89,8 @@ byte OBDList[] = {
     PID_ENGINE_FUEL_RATE,
     PID_ENGINE_TORQUE_DEMANDED,
     PID_ENGINE_TORQUE_PERCENTAGE,
-    PID_ENGINE_REF_TORQUE};
+    PID_ENGINE_REF_TORQUE,
+};
 
 typedef struct
 {
@@ -113,13 +107,11 @@ PID_LIST PIDLog[] = {
     {PID_THROTTLE, true, "Throttle"},
     {PID_ENGINE_LOAD, true, "Engine Load"},
     {PID_RELATIVE_THROTTLE_POS, true, "Rel Throttle Pos"},
-    {PID_EMISSION_MAF, true, "Emission MAF"},
     {PID_MAF_FLOW, true, "MAF Flow"},
-    {PID_EMISSION_MAP, true, "Emission MAP"},
     {PID_INTAKE_MAP, true, "Intake MAP"},
     {PID_BATTERY_VOLTAGE, true, "Battery Voltage"},
     {PID_DEVICE_TEMP, true, "Device Temp"},
-    {PID_FUEL_CONSUMPTION, true, "Fuel Consumption"}};
+};
 
 PID_LIST GPSLog[] = {
     // Defines which GPS PIDs would be LOGGED and their labels on the CSV
@@ -139,6 +131,7 @@ typedef struct
   byte pid;
   int value;
   byte pos;
+  uint32_t ts;
 } PID_POLLING_INFO;
 
 PID_POLLING_INFO obdData[51];
@@ -154,6 +147,9 @@ int getDataIndex(byte pid)
   }
   return -1;
 }
+
+bool shouldOBDLog = SHOULD_OBD_LOG; // Defines whether OBD and
+bool shouldGPSLog = SHOULD_GPS_LOG; // GPS data should be saved on the CSV
 
 CBufferManager bufman;
 Task subtask;
@@ -333,31 +329,44 @@ int handlerControl(UrlHandlerParam *param)
 #if ENABLE_OBD
 void processOBD(CBuffer *buffer)
 {
-  int pos = 0;
+  byte pos = 0;
   for (byte i = 0; i < sizeof(OBDList) / sizeof(OBDList[0]); i++)
   {
     byte pid = OBDList[i];
     if (obd.isValidPID(pid))
     {
-      obdData[pos]={pid, 0, pos};
+      obdData[pos] = {pid, 0, pos};
       Serial.println(obdData[pos].pid, HEX);
       pos++;
     }
   }
-  
-/* 
-  Calculations calc;
 
-  // Variables for emission values
-  float emission_maf, emission_map;
-  float calc_maf;
-  float rho_gasoline = 737;
-  int cte = 1000;
-  int cil = 1497;
-  float AFR = 14.7;
+  if (shouldOBDLog)
+  { // Prints the first line in the table for OBD then for GPS
+    char Timestamp[10] = "Timestamp";
+    logger.log(Timestamp);
+    for (byte i = 0; i < sizeof(PIDLog) / sizeof(PIDLog[0]); i++)
+    {
+      if (PIDLog[i].log)
+      {
+        logger.log(PIDLog[i].name);
+      }
+    }
+    shouldOBDLog = false;
+  }
+  if (shouldGPSLog)
+  {
+    for (byte i = 0; i < sizeof(GPSLog) / sizeof(GPSLog[0]); i++)
+    {
+      if (GPSLog[i].log)
+      {
+        logger.log(GPSLog[i].name);
+      }
+    }
+    shouldGPSLog = false;
+  }
 
-  int map_value, rpm_value, intake_temp_value_in_K, speed;
-*/
+  logger.timestamp(millis()); // Creates a new line on the table and saves the timestamp
 
   for (byte i = 0; i < sizeof(obdData) / sizeof(obdData[0]); i++)
   {
